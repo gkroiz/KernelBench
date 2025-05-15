@@ -224,44 +224,54 @@ Let's think step by step.\n
     assert cot_example in ["ex_fuse_gelu", "ex_mnist2", "ex_tiled_matmul"]
 
     # k = 2
-    example_fuse_gelu = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_fuse_gelu.py")
-    )
-    example_fuse_gelu_cot = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/cot/model_cot_fuse_gelu.py")
-    )
-    example_fuse_gelu_new = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_new_ex_fuse_gelu.py")
-    )
-    example_fuse_gelu_desc = "This given architecture is for a fused gelu: "
+    if cot_example == "ex_fuse_gelu":
+        example_fuse_gelu = read_file(
+            os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_fuse_gelu.py")
+        )
+        example_fuse_gelu_cot = read_file(
+            os.path.join(REPO_TOP_PATH, "src/prompts/cot/model_cot_fuse_gelu.py")
+        )
+        example_fuse_gelu_new = read_file(
+            os.path.join(
+                REPO_TOP_PATH, "src/prompts/few_shot/pallas/model_new_ex_fuse_gelu.py"
+            )
+        )
+        example_fuse_gelu_desc = "This given architecture is for a fused gelu: "
 
     # k = 3
-    example_mnist2 = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_mnist2.py")
-    )
-    example_mnist2_cot = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/cot/model_cot_mnist2.py")
-    )
-    example_mnist2_new = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_new_ex_mnist2.py")
-    )
-    exmaple_mnist2_desc = (
-        "This given architecture is for a model with fused convolutions and relus: "
-    )
+    if cot_example == "ex_mnist2":
+        example_mnist2 = read_file(
+            os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_mnist2.py")
+        )
+        example_mnist2_cot = read_file(
+            os.path.join(REPO_TOP_PATH, "src/prompts/cot/model_cot_mnist2.py")
+        )
+        example_mnist2_new = read_file(
+            os.path.join(
+                REPO_TOP_PATH, "src/prompts/few_shot/pallas/model_new_ex_mnist2.py"
+            )
+        )
+        exmaple_mnist2_desc = (
+            "This given architecture is for a model with fused convolutions and relus: "
+        )
 
     # k = 4
-    example_tiled_matmul = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_tiled_matmul.py")
-    )
-    example_tiled_matmul_cot = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/cot/model_cot_tiled_matmul.py")
-    )
-    example_tiled_matmul_new = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_new_ex_tiled_matmul.py")
-    )
-    example_tiled_matmul_desc = (
-        "This given architecture is for a model with tiled matrix multiplication: "
-    )
+    if cot_example == "ex_tiled_matmul":
+        example_tiled_matmul = read_file(
+            os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_tiled_matmul.py")
+        )
+        example_tiled_matmul_cot = read_file(
+            os.path.join(REPO_TOP_PATH, "src/prompts/cot/model_cot_tiled_matmul.py")
+        )
+        example_tiled_matmul_new = read_file(
+            os.path.join(
+                REPO_TOP_PATH,
+                "src/prompts/few_shot/pallas/model_new_ex_tiled_matmul.py",
+            )
+        )
+        example_tiled_matmul_desc = (
+            "This given architecture is for a model with tiled matrix multiplication: "
+        )
 
     match cot_example:
         case "ex_fuse_gelu":
@@ -327,7 +337,7 @@ def prompt_generate_custom_pallas_from_file_one_example(ref_arch_src, example_in
         REPO_TOP_PATH, f"src/prompts/model_ex_{example_ind}.py"
     )
     example_new_arch_path = os.path.join(
-        REPO_TOP_PATH, f"src/prompts/model_new_pallas_ex_{example_ind}.py"
+        REPO_TOP_PATH, f"src/prompts/pallas/model_new_ex_{example_ind}.py"
     )
 
     if not os.path.exists(example_arch_path):
@@ -356,7 +366,7 @@ def prompt_generate_custom_pallas_from_prompt_template(ref_arch_src: str) -> str
     # path to prompt template, show an example of Model (torch specifications) and ModelNew (torch + custom Jax Pallas kernels)
     example_arch_path = os.path.join(REPO_TOP_PATH, f"src/prompts/model_ex_add.py")
     example_new_arch_path = os.path.join(
-        REPO_TOP_PATH, f"src/prompts/model_new_pallas_ex_add.py"
+        REPO_TOP_PATH, f"src/prompts/pallas/model_new_ex_add.py"
     )
 
     if not os.path.exists(example_arch_path):
@@ -388,7 +398,7 @@ def prompt_generate_prompt_with_hardware_info_from_template(
     # path to prompt template, show an example of Model (torch specifications) and ModelNew (torch + custom Jax Pallas kernels)
     example_arch_path = os.path.join(REPO_TOP_PATH, f"src/prompts/model_ex_add.py")
     example_new_arch_path = os.path.join(
-        REPO_TOP_PATH, f"src/prompts/model_new_pallas_ex_add.py"
+        REPO_TOP_PATH, f"src/prompts/pallas/model_new_ex_add.py"
     )
 
     gpu_spec_file_path = os.path.join(

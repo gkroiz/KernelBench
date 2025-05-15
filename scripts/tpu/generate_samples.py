@@ -9,6 +9,7 @@ from pydra import REQUIRED, Config
 from src.dataset import construct_kernelbench_dataset
 from src.tpu.prompt_constructor import (
     prompt_generate_custom_pallas_from_prompt_template,
+    prompt_generate_ex_with_CoT_template,
 )
 from src.utils import (
     create_inference_server_from_presets,
@@ -72,6 +73,9 @@ class GenerationConfig(Config):
 
         self.log_prompt = False
 
+        # Prompt type:
+        self.prompt_type = "default"  # default, cot
+
     def greedy(self):
         # For greedy decoding, epsecially baseline eval
         self.greedy_sample = True
@@ -118,9 +122,19 @@ def generate_sample_single(
     ), f"Problem number in filename ({problem_number}) does not match config problem_id ({config.problem_id})"
 
     # Construct Prompt
-    custom_pallas_prompt = prompt_generate_custom_pallas_from_prompt_template(
-        ref_arch_src
-    )
+    if config.prompt_type == "default":
+        custom_pallas_prompt = prompt_generate_custom_pallas_from_prompt_template(
+            ref_arch_src
+        )
+    elif config.prompt_type == "cot":
+        custom_pallas_prompt = prompt_generate_ex_with_CoT_template(
+            ref_arch_src, "ex_tiled_matmul"
+        )
+    else:
+        raise ValueError(
+            f"Invalid prompt type: {config.prompt_type}. Supported types are 'default' and 'cot'."
+        )
+
     if config.log_prompt:
         prompt_path = os.path.join(
             run_dir,
