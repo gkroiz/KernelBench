@@ -17,7 +17,8 @@ from tqdm import tqdm
 # API clients
 from together import Together
 from openai import OpenAI
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import anthropic
 
 # from datasets import load_dataset
@@ -145,7 +146,7 @@ def query_server(
             )
             model = model_name
         case "google":
-            genai.configure(api_key=GEMINI_KEY)
+            client = genai.Client(api_key=GEMINI_KEY)
             model = model_name
         case "together":
             client = Together(api_key=TOGETHER_KEY)
@@ -160,12 +161,10 @@ def query_server(
         case _:
             raise NotImplementedError
 
-    if server_type != "google":
-        assert client is not None, "Client is not set, cannot proceed to generations"
-    else:
-        print(
-            f"Querying {server_type} {model} with temp {temperature} max tokens {max_tokens}"
-        )
+    assert client is not None, "Client is not set, cannot proceed to generations"
+    print(
+        f"Querying {server_type} {model} with temp {temperature} max tokens {max_tokens}"
+    )
     # Logic to query the LLM
     if server_type == "anthropic":
         assert type(prompt) == str
@@ -201,21 +200,23 @@ def query_server(
     elif server_type == "google":
         # assert model_name == "gemini-1.5-flash-002", "Only test this for now"
 
-        generation_config = {
-            "temperature": temperature,
-            "top_p": top_p,
-            "top_k": top_k,
-            "max_output_tokens": max_tokens,
-            "response_mime_type": "text/plain",
-        }
-
-        model = genai.GenerativeModel(
-            model_name=model_name,
+        generation_config = types.GenerateContentConfig(
             system_instruction=system_prompt,
-            generation_config=generation_config,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            max_output_tokens=max_tokens,
+            response_mime_type="text/plain",
         )
 
-        response = model.generate_content(prompt)
+        if model_name == "gemini-2.5-flash-preview-04-17":
+            generation_config.thinking_config = types.ThinkingConfig(thinking_budget=24576)
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=generation_config,
+        )
 
         return response.text
 
