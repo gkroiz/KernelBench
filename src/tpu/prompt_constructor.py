@@ -29,20 +29,20 @@ def get_arch_definition(arch_src):
     """
     Construct torch definition from original torch nn.Module definition
     """
-    prompt = f"Here is a pytorch defintion of a neural network architecture in the file model.py: ```{arch_src}```\n"
+    prompt = f"Here is a pytorch defintion of a neural network architecture in the file model.py: ```{arch_src}```\n\n"
     return prompt
 
 
 ############################################
 # Jax Pallas Prompt
 ############################################
-PROBLEM_STATEMENT = """You write custom Jax Pallas kernels to replace the pytorch operators in the given architecture to get speedups. \n
-    You have complete freedom to choose the set of operators you want to replace. You may make the decision to replace some operators with custom Jax Pallas kernels and leave others unchanged. You may replace multiple operators with custom implementations, consider operator fusion opportunities (combining multiple operators into a single kernel, for example, combining matmul+relu), or algorithmic changes (such as online softmax). You are only limited by your imagination.\n
-"""
-PROBLEM_INSTRUCTION = """
-Optimize the architecture named Model with custom Jax Pallas operators! Name your optimized output architecture ModelNew. Output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Just output the new model code, no other text, and NO testing code! \n
-"""
-
+PROBLEM_STATEMENT = (
+    "You write custom Jax Pallas kernels to replace the pytorch operators in the given architecture to get speedups. \n\n"
+    "You have complete freedom to choose the set of operators you want to replace. You may make the decision to replace some operators with custom Jax Pallas kernels and leave others unchanged. You may replace multiple operators with custom implementations, consider operator fusion opportunities (combining multiple operators into a single kernel, for example, combining matmul+relu), or algorithmic changes (such as online softmax). You are only limited by your imagination.\n\n"
+)
+PROBLEM_INSTRUCTION = (
+"\nOptimize the architecture named Model with custom Jax Pallas operators! Name your optimized output architecture ModelNew. Output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Just output the new model code, no other text, and NO testing code! \n\n"
+)
 
 def prompt_generate_custom_pallas(
     arc_src: str, example_arch_src: str, example_new_arch_src: str
@@ -50,32 +50,31 @@ def prompt_generate_custom_pallas(
     prompt = PROBLEM_STATEMENT
 
     if example_arch_src != "" and example_new_arch_src != "":
-        prompt += f"""
-        Here's an example to show you the syntax of inline embedding custom Jax Pallas operators in torch: The example given architecture is: \n
-        ``` \n
-        {example_arch_src}
-        ``` \n
-        The example new arch with custom Jax Pallas kernels looks like this: 
-        ```
-        {example_new_arch_src}
-        ``` \n
-        """
+        prompt += (
+            "\nHere's an example to show you the syntax of inline embedding custom Jax Pallas operators in torch: The example given architecture is: \n\n"
+            "``` \n\n"
+            f"{example_arch_src}\n"
+            "``` \n\n"
+            "The example new arch with custom Jax Pallas kernels looks like this:\n" 
+            "```\n"
+            f"{example_new_arch_src}\n"
+            "``` \n\n"
+        )
 
-    prompt += f"""
-    You are given the following architecture: \n
-    ```
-    {arc_src}
-    ```
-    """
+    prompt += (
+        "\nYou are given the following architecture: \n\n"
+        "```\n"
+        f"{arc_src}\n"
+        "```\n"
+    )
     prompt += PROBLEM_INSTRUCTION
     return prompt
 
 
-PROBLEM_STATEMENT_CLEANED = """You write custom Jax Pallas kernels to replace the pytorch operators in the given architecture to get speedups.\n\nYou have complete freedom to choose the set of operators you want to replace. You may make the decision to replace some operators with custom Jax Pallas kernels and leave others unchanged. You may replace multiple operators with custom implementations, consider operator fusion opportunities (combining multiple operators into a single kernel, for example, combining matmul+relu), or algorithmic changes (such as online softmax). You are only limited by your imagination.\n
-"""
-PROBLEM_INSTRUCTION_CLEANED = """
-Optimize the architecture named Model with custom Jax Pallas operators! Name your optimized output architecture ModelNew. Output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Just output the new model code, no other text, and NO testing code! \n
-"""
+PROBLEM_STATEMENT_CLEANED = "You write custom Jax Pallas kernels to replace the pytorch operators in the given architecture to get speedups.\n\nYou have complete freedom to choose the set of operators you want to replace. You may make the decision to replace some operators with custom Jax Pallas kernels and leave others unchanged. You may replace multiple operators with custom implementations, consider operator fusion opportunities (combining multiple operators into a single kernel, for example, combining matmul+relu), or algorithmic changes (such as online softmax). You are only limited by your imagination.\n\n"
+
+PROBLEM_INSTRUCTION_CLEANED = "\nOptimize the architecture named Model with custom Jax Pallas operators! Name your optimized output architecture ModelNew. Output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Just output the new model code, no other text, and NO testing code! \n\n"
+
 
 
 def prompt_generate_custom_pallas_fewshot_and_template(
@@ -178,27 +177,28 @@ def prompt_generate_custom_pallas_fewshot_and_template(
     for i, tup in enumerate(examples):
         base, kernel, desc = tup
 
-        prompt += f"""
-Example {i+1}:\n\n
-Here is an example architecture:\n\n
-```
-{base}
-```\n
-{PROBLEM_INSTRUCTION_CLEANED} \n
-Here is an optimized verison with custom Jax Pallas kernels: \n
-```
-{kernel}
-```\n\n
-"""
+        prompt += (
+            f"Example {i+1}:\n\n\n"
+            "Here is an example architecture:\n\n\n"
+            "```\n"
+            f"{base}\n"
+            "```\n\n"
+            f"{PROBLEM_INSTRUCTION_CLEANED} \n\n"
+            "Here is an optimized verison with custom Jax Pallas kernels: \n\n"
+            "```\n"
+            f"{kernel}\n"
+            "```\n\n\n"
+        )
 
     # should we put task here?
-    prompt += f"""
-Task:\n\n
-Here is an example architecture:\n\n
-```
-{ref_arch_src}
-```\n
-"""
+    prompt = (
+        "\nTask:\n\n\n"
+        "Here is an example architecture:\n\n\n"
+        "```\n"
+        f"{ref_arch_src}\n"
+        "```\n\n"
+    )
+
     prompt += PROBLEM_INSTRUCTION_CLEANED
     return prompt
 
@@ -213,11 +213,11 @@ def prompt_generate_ex_with_CoT_template(ref_arch_src: str, cot_example: str) ->
     """
 
     # I updated this to allow CoT. Also explicilty state think step by step.
-    PROBLEM_INSTRUCTION_COT = """
-Optimize the architecture named Model with custom Jax Pallas operators! Name your optimized output architecture ModelNew. Output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Do not output testing code. 
-In the end, make sure the final code block contains code for output architecture ModelNew with Jax Pallas code.\n
-Let's think step by step.\n
-"""
+    PROBLEM_INSTRUCTION_COT = (
+        "\nOptimize the architecture named Model with custom Jax Pallas operators! Name your optimized output architecture ModelNew. Output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Do not output testing code. \n"
+        "In the end, make sure the final code block contains code for output architecture ModelNew with Jax Pallas code.\n\n"
+        "Let's think step by step.\n\n"
+    )
 
     prompt = PROBLEM_STATEMENT_CLEANED
 
@@ -297,26 +297,27 @@ Let's think step by step.\n
     # construct example with
     # NOTE: we only do one example with CoT for now
     # 1. ref_src problem -> 2. Instruction -> 3. CoT -> 4. Solution
-    prompt += f"""
-Here is an example architecture:\n\n
-```
-{base}
-```\n
-{PROBLEM_INSTRUCTION_COT} \n
-{cot} \n
-```
-{kernel}
-```\n\n
-"""
+    prompt += (
+        "\nHere is an example architecture:\n\n\n"
+        "```\n"
+        f"{base}\n"
+        "```\n\n"
+        f"{PROBLEM_INSTRUCTION_COT} \n\n"
+        f"{cot} \n\n"
+        "```\n"
+        f"{kernel}\n"
+        "```\n\n\n"
+    )
 
     # show task to solve
-    prompt += f"""
-Task:\n\n
-Here is an example architecture:\n\n
-```
-{ref_arch_src}
-```\n
-"""
+    prompt += (
+        "\nTask:\n\n\n"
+        "Here is an example architecture:\n\n\n"
+        "```\n"
+        f"{ref_arch_src}\n"
+        "```\n\n"
+    )
+
     prompt += PROBLEM_INSTRUCTION_COT
 
     return prompt
@@ -384,166 +385,15 @@ def prompt_generate_custom_pallas_from_prompt_template(ref_arch_src: str) -> str
     return prompt_generate_custom_pallas(arch, example_arch, example_new_arch)
 
 
-def prompt_generate_prompt_with_hardware_info_from_template(
-    ref_arch_src: str, gpu_name: str
-) -> str:
-    """
-    Similar to prompt_generate_custom_pallas_from_prompt_template,
-    but with hardware information for the given GPU
-    """
-
-    arch = ref_arch_src
-    # These are strictly defined for now
-
-    # path to prompt template, show an example of Model (torch specifications) and ModelNew (torch + custom Jax Pallas kernels)
-    example_arch_path = os.path.join(REPO_TOP_PATH, f"src/prompts/model_ex_add.py")
-    example_new_arch_path = os.path.join(
-        REPO_TOP_PATH, f"src/prompts/pallas/model_new_ex_add.py"
-    )
-
-    gpu_spec_file_path = os.path.join(
-        REPO_TOP_PATH, f"src/prompts/hardware/gpu_specs.py"
-    )
-
-    example_arch = read_file(example_arch_path)
-    example_new_arch = read_file(example_new_arch_path)
-    gpu_spec_info = read_file(gpu_spec_file_path)
-
-    return prompt_generate_prompt_with_hardware_info(
-        ref_arch_src=arch,
-        gpu_name=gpu_name,
-        example_arch_src=example_arch,
-        example_new_arch_src=example_new_arch,
-        gpu_spec_info_src=gpu_spec_info,
-    )
-
-
-def prompt_generate_prompt_with_hardware_info(
-    ref_arch_src: str,
-    gpu_name: str,
-    example_arch_src: str,
-    example_new_arch_src: str,
-    gpu_spec_info_src: str,
-) -> str:
-    """
-    Generate a prompt with hardware information for the given GPU
-    gpu_spec_info_src: str of the gpu spec src file
-    """
-
-    # Create a dictionary to store the local namespace
-    local_dict = {}
-
-    # Execute the GPU spec file in the local namespace
-    exec(gpu_spec_info_src, {}, local_dict)
-
-    # Get the required variables from the local namespace
-    GPU_SPEC_INFO = local_dict.get("GPU_SPEC_INFO")
-    GPU_DEFINITIONS = local_dict.get("GPU_DEFINITIONS")
-    GPU_BEST_PRACTICES = local_dict.get("GPU_BEST_PRACTICES")
-
-    if not GPU_SPEC_INFO or not GPU_DEFINITIONS or not GPU_BEST_PRACTICES:
-        raise ValueError(
-            "GPU_SPEC_INFO or GPU_DEFINITIONS or GPU_BEST_PRACTICES not found in gpu_spec_info_src"
-        )
-
-    assert gpu_name in GPU_SPEC_INFO, f"GPU name {gpu_name} not found in GPU_SPEC_INFO"
-
-    prompt = PROBLEM_STATEMENT
-
-    if example_arch_src != "" and example_new_arch_src != "":
-        prompt += f"""
-        Here's an example to show you the syntax of inline embedding custom Jax Pallas operators in torch: The example given architecture is: \n
-        ``` \n
-        {example_arch_src}
-        ``` \n
-        The example new arch with custom Jax Pallas kernels looks like this: 
-        ```
-        {example_new_arch_src}
-        ``` \n
-        """
-
-    curr_gpu_spec_info = GPU_SPEC_INFO[gpu_name]
-
-    gpu_architecture = curr_gpu_spec_info.get("GPU Architecture")
-    prompt += f"""
-    Here is some information about the underlying hardware that you should keep in mind. \n\n
-The GPU that will run the kernel is NVIDIA {gpu_name}, {gpu_architecture} architecture.\n\n"""
-
-    for key, value in curr_gpu_spec_info.items():
-        if key == "GPU Architecture":
-            continue
-        prompt += f"""- We have {value} of {key}.\n"""
-
-    prompt += f"""\n\n
-Here are some concepts about the GPU architecture that could be helpful: \n\n"""
-    for key, value in GPU_DEFINITIONS.items():
-        prompt += f"""- {key}: {value}\n"""
-
-    prompt += f"""\n\n
-Here are some best practices for writing Jax Pallas kernels on GPU: \n\n"""
-    for best_practice in GPU_BEST_PRACTICES:
-        prompt += f"""- {best_practice}\n"""
-
-    prompt += f"""
-    You are given the following architecture: \n
-    ```
-    {ref_arch_src}
-    ```
-    """
-
-    prompt += PROBLEM_INSTRUCTION
-    return prompt
-
-    return Nonoe
-
-
-def prompt_fix_compile(ref_arch_src, custom_pallas, metadata):
-    prompt = PROBLEM_STATEMENT
-    prompt += f"""
-    With the following architecture:
-    ```
-    {ref_arch_src}
-    ```
-    You generated the following solution and it failed to compile:
-    ```
-    {custom_pallas}
-    ```
-    Here's the metadata of the compilation error:
-    ```
-    {metadata}
-    ```
-    
-    Please fix the compilation error in the new model code. Please output the corrected code in codeblocks.
-    """
-    return prompt
-
-
-def prompt_fix_correctness(ref_arch_src, custom_pallas, metadata):
-    prompt = PROBLEM_STATEMENT
-    prompt += f"""
-    With the following architecture:
-    ```
-    {ref_arch_src}
-    ```
-    You generated the following solution and it failed correctness:
-    ```
-    {custom_pallas}
-    ```
-    Here's the metadata of the correctness error:
-    ```
-    {metadata}
-    ```
-    Please consider how your custom Jax Pallas kernels are implemented, how it is different from the reference implementation, and fix the correctness error in the new model code. Please output the corrected code in codeblocks.
-    """
-    return prompt
-
+def prompt_generate_custom_pallas_zero_shot_from_prompt_template(ref_arch_src) -> str:
+    return prompt_generate_custom_pallas(ref_arch_src, "", "")
 
 def main():
     gpu_name = "L40S"
 
     ref_arch_src = read_file(os.path.join(KERNEL_BENCH_PATH, f"level1/19_ReLU.py"))
     assert len(ref_arch_src) > 0, "ref_arch_src is empty"
-    prompt = prompt_generate_prompt_with_hardware_info_from_template(
+    prompt = prompt_generate_custom_pallas_from_prompt_template(
         ref_arch_src, gpu_name
     )
     print(prompt)
