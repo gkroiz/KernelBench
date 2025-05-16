@@ -196,7 +196,7 @@ def evaluate_single_sample(
             # NOTE: count this as compilation failure as it is not runnable code
             metadata = {
                 "cuda_error": f"CUDA Error: {str(e)}",
-                "hardware": torch.cuda.get_device_name(device=device),
+                "hardware": torch.cuda.get_device_name(device=device) if torch.cuda.is_available() else "TPU",
                 "device": str(device),
             }  # log this for debugging as this usually signifies illegal memory access
             eval_result = KernelExecResult(
@@ -206,7 +206,7 @@ def evaluate_single_sample(
         else:
             metadata = {
                 "other_error": f"error: {str(e)}",
-                "hardware": torch.cuda.get_device_name(device=device),
+                "hardware": torch.cuda.get_device_name(device=device) if torch.cuda.is_available() else "TPU",
                 "device": str(device),
             }  # for debugging
             eval_result = KernelExecResult(
