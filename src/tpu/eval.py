@@ -1,16 +1,20 @@
 import os
+import inspect
 
 import jax
 import numpy as np
 import torch
 import torch.nn as nn
 from flax import nnx
+from jax import numpy as jnp
 
 from src.eval import (
     KernelExecResult,
     load_original_model_and_inputs,
     register_and_format_exception,
 )
+
+from torch.distributed._state_dict_utils import _flatten_state_dict
 
 
 def load_custom_model(
@@ -91,6 +95,67 @@ def graceful_eval_cleanup(curr_context: dict, device: torch.device):
             )  # Wait for all CUDA operations to complete
 
     # _cleanup_cuda_extensions() # SIMON NOTE: is this necessary?
+
+
+TORCH_TO_JAX = {
+    "kernel": "weight",
+}
+
+
+def torch_to_jax_sd_copy(torch_model: nn.Module, jax_model: nnx.Module) -> nnx.Module:
+    torch_sd = torch_model.state_dict()
+
+    torch_flat_sd, map = _flatten_state_dict(torch_sd)
+    # Get jax state dict
+    jax_graphdef, jax_params, jax_batch_stats = nnx.split(jax_model, nnx.Param, nnx.BatchStat)
+
+    jax_state_dict = jax_params.flat_state()
+
+    for (jk, jv) in jax_state_dict:
+        jk_concat = ".".join(jk)
+
+        # Convert JAX terms to PyTorch terms based on TERM_DICT
+        for torch_term, jax_term in TORCH_TO_JAX.items():
+            if torch_term in jk_concat:
+                jk_concat = jk_concat.replace(torch_term, jax_term)
+                
+        if jk_concat not in torch_flat_sd:
+            raise ValueError(f"Mismatch in keys: JAX key {jk} does not exist in PyTorch state_dict.")
+
+        # Check if the JAX tensor needs to be transposed
+        torch_shape = torch_flat_sd[jk_concat].shape
+        jax_shape = jv.value.shape
+
+        # If shapes don't match but have same elements, try to transpose
+        if torch_shape != jax_shape and torch_shape[::-1] == jax_shape:
+            # If weight tensor in linear layer, transpose for PyTorch -> JAX conversion
+            torch_tensor = torch_flat_sd[jk_concat].numpy().T
+            jv.value = jnp.array(torch_tensor)
+        elif torch_shape != jax_shape:
+            # More complex case: dimensions might be permuted differently
+            if torch_shape[0] * torch_shape[1] == jax_shape[0] * jax_shape[1]:
+                # Try different permutations if dimensions are compatible
+                try:
+                    # Try simple transpose first
+                    torch_tensor = torch_flat_sd[jk_concat].numpy().T
+                    if torch_tensor.shape == jax_shape:
+                        jv.value = jnp.array(torch_tensor)
+                    else:
+                        # If still doesn't match, try reshape then transpose
+                        torch_tensor = torch_flat_sd[jk_concat].numpy().reshape(jax_shape)
+                        jv.value = jnp.array(torch_tensor)
+                except Exception as e:
+                    raise ValueError(f"Cannot reconcile shapes: {torch_shape} vs {jax_shape}. Error: {str(e)}")
+            else:
+                raise ValueError(f"Incompatible shapes: {torch_shape} vs {jax_shape}")
+        else:
+            # Shapes match, direct copy
+            jv.value = jnp.array(torch_flat_sd[jk_concat].numpy())
+        
+
+    jax_model = nnx.merge(jax_graphdef, jax_params, jax_batch_stats)
+    
+    return jax_model
 
 
 def time_execution_with_cuda_event(
@@ -216,6 +281,42 @@ def run_and_check_correctness(
                     )
                     for x in inputs
                 ]
+
+                model_new = torch_to_jax_sd_copy(
+                    original_model_instance, model_new
+                )
+
+                def is_first_layer_conv(model: nnx.Module) -> bool:
+                    """Check if the first layer of a JAX NNX model is a Conv layer"""
+                    try:
+                        # Get all modules in the model
+                        modules = list(model.iter_modules())
+                        if not modules:
+                            return False
+
+                        # Get the first module (skip the root module itself)
+                        first_layer = None
+                        for path, module in modules:
+                            if path:  # Skip empty path (root module)
+                                first_layer = module
+                                break
+
+                        if first_layer is None:
+                            return False
+
+                        # Check if it's a Conv layer
+                        layer_type = type(first_layer).__name__
+                        return 'Conv' in layer_type
+
+                    except Exception:
+                        return False
+
+                if is_first_layer_conv(model_new):
+                    # For Conv layers, inputs might need channel-first format (NCHW)
+                    jax_inputs = [
+                        jnp.transpose(x, (0, 2, 3, 1)) if len(x.shape) == 4 else x
+                        for x in jax_inputs
+                    ]
 
                 output_new = model_new(*jax_inputs).block_until_ready()
 
@@ -373,17 +474,28 @@ def eval_kernel_against_ref(
 
     # at this point we passed compilation
     try:
-        with torch.no_grad():
-            set_seed(seed_num)  # set seed for reproducible weights
-            custom_model = ModelNew(*init_inputs)
-            assert hasattr(custom_model, "__call__")
-            if torch.cuda.is_available():
-                torch.cuda.synchronize(device=device)
+        # Get the signature of the class's __init__ method
+        sig = inspect.signature(ModelNew.__init__)
+
+        # Convert PyTorch tensors to JAX arrays for initialization
+        jax_init_inputs = [
+            jnp.array(x.cpu().numpy()) if isinstance(x, torch.Tensor) else x
+            for x in init_inputs
+        ]
+
+        if 'rngs' in sig.parameters:
+            custom_model = ModelNew(
+                *jax_init_inputs,
+                rngs=nnx.Rngs(seed_num),
+            )
+        else:
+            custom_model = ModelNew(*jax_init_inputs)
+
         if verbose:
-            print("[Eval] New Model with Custom CUDA Kernel Loaded")
+            print("[Eval] New Model with Custom Jax Pallas Kernel Loaded")
     except RuntimeError as e:
         print(
-            f"Failed to load custom CUDA kernel; Compiled but not able to run, count as runtime error. \nError: {e}"
+            f"Failed to load custom Jax Pallas kernel; Compiled but not able to run, count as runtime error. \nError: {e}"
         )
         # TODO: add metadata for runtime error e.g. error in launching kernel, illegal memory access, ...
         graceful_eval_cleanup(context, device)
