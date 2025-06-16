@@ -98,25 +98,25 @@ def prompt_generate_custom_pallas_fewshot_and_template(
         os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_add.py")
     )
     example_add_new = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_new_ex_add.py")
+        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/pallas/model_new_ex_add.py")
     )
     example_add_desc = "This given architecture is for a pointwise addition: "
 
     # k = 2
-    example_fuse_gelu = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_fuse_gelu.py")
-    )
-    example_fuse_gelu_new = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_new_ex_fuse_gelu.py")
-    )
-    example_fuse_gelu_desc = "This given architecture is for a fused gelu: "
+    # example_fuse_gelu = read_file(
+    #     os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_fuse_gelu.py")
+    # )
+    # example_fuse_gelu_new = read_file(
+    #     os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/pallas/model_new_ex_fuse_gelu.py")
+    # )
+    # example_fuse_gelu_desc = "This given architecture is for a fused gelu: "
 
     # k = 3 (DEPRECATED)
     example_mnist2 = read_file(
         os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_mnist2.py")
     )
     example_mnist2_new = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_new_ex_mnist2.py")
+        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/pallas/model_new_ex_mnist2.py")
     )
     exmaple_mnist2_desc = (
         "This given architecture is for a model with fused convolutions and relus: "
@@ -127,20 +127,20 @@ def prompt_generate_custom_pallas_fewshot_and_template(
         os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_tiled_matmul.py")
     )
     example_tiled_matmul_new = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_new_ex_tiled_matmul.py")
+        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/pallas/model_new_ex_tiled_matmul.py")
     )
     example_tiled_matmul_desc = (
         "This given architecture is for a model with tiled matrix multiplication: "
     )
 
-    # k = 5
-    example_flash_attn = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_flash_attn.py")
-    )
-    example_flash_attn_new = read_file(
-        os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_new_ex_flash_attn.py")
-    )
-    example_flash_attn_desc = "This given architecture is for a model with simple io-aware implementation of attention, also known as flash attention: "
+    # # k = 5
+    # example_flash_attn = read_file(
+    #     os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/model_ex_flash_attn.py")
+    # )
+    # example_flash_attn_new = read_file(
+    #     os.path.join(REPO_TOP_PATH, "src/prompts/few_shot/pallas/model_new_ex_flash_attn.py")
+    # )
+    # example_flash_attn_desc = "This given architecture is for a model with simple io-aware implementation of attention, also known as flash attention: "
 
     examples = []
     for s in shots:
@@ -154,12 +154,12 @@ def prompt_generate_custom_pallas_fewshot_and_template(
             raise ValueError(f"Invalid shot: {s}")
         elif s == "ex_add":
             examples.append((example_add, example_add_new, example_add_desc))
-        elif s == "ex_fuse_gelu":
-            examples.append(
-                (example_fuse_gelu, example_fuse_gelu_new, example_fuse_gelu_desc)
-            )
+        # elif s == "ex_fuse_gelu":
+        #     examples.append(
+        #         (example_fuse_gelu, example_fuse_gelu_new, example_fuse_gelu_desc)
+        #     )
         elif s == "ex_mnist2":  # DEPRECATED
-            raise ValueError("ex_mnist2 is deprecated")
+            # raise ValueError("ex_mnist2 is deprecated")
             examples.append((example_mnist2, example_mnist2_new, exmaple_mnist2_desc))
         elif s == "ex_tiled_matmul":
             examples.append(
@@ -169,31 +169,31 @@ def prompt_generate_custom_pallas_fewshot_and_template(
                     example_tiled_matmul_desc,
                 )
             )
-        elif s == "ex_flash_attn":
-            examples.append(
-                (example_flash_attn, example_flash_attn_new, example_flash_attn_desc)
-            )
+        # elif s == "ex_flash_attn":
+        #     examples.append(
+        #         (example_flash_attn, example_flash_attn_new, example_flash_attn_desc)
+        #     )
 
     for i, tup in enumerate(examples):
         base, kernel, desc = tup
 
         prompt += (
-            f"Example {i+1}:\n\n\n"
-            "Here is an example architecture:\n\n\n"
+            f"Example {i+1}:\n\n"
+            "Here is an example architecture:\n\n"
             "```\n"
             f"{base}\n"
             "```\n\n"
-            f"{PROBLEM_INSTRUCTION_CLEANED} \n\n"
+            # f"{PROBLEM_INSTRUCTION_CLEANED} \n\n"
             "Here is an optimized verison with custom Jax Pallas kernels: \n\n"
             "```\n"
-            f"{kernel}\n"
-            "```\n\n\n"
+            f"{kernel}"
+            "```\n\n"
         )
 
     # should we put task here?
-    prompt = (
-        "\nTask:\n\n\n"
-        "Here is an example architecture:\n\n\n"
+    prompt += (
+        "Task:\n\n"
+        "Here is an example architecture:\n\n"
         "```\n"
         f"{ref_arch_src}\n"
         "```\n\n"

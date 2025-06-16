@@ -9,6 +9,7 @@ from pydra import REQUIRED, Config
 from src.dataset import construct_kernelbench_dataset
 from src.tpu.prompt_constructor import (
     prompt_generate_custom_pallas_from_prompt_template,
+    prompt_generate_custom_pallas_fewshot_and_template,
     prompt_generate_custom_pallas_zero_shot_from_prompt_template,
     prompt_generate_ex_with_CoT_template,
 )
@@ -75,7 +76,7 @@ class GenerationConfig(Config):
         self.log_prompt = False
 
         # Prompt type:
-        self.prompt_type = "default"  # default, cot, zeroshot
+        self.prompt_type = "default"  # default, cot, zeroshot, fewshot
 
     def greedy(self):
         # For greedy decoding, epsecially baseline eval
@@ -134,6 +135,11 @@ def generate_sample_single(
     elif config.prompt_type == "cot":
         custom_pallas_prompt = prompt_generate_ex_with_CoT_template(
             ref_arch_src, "ex_tiled_matmul"
+        )
+    elif config.prompt_type == "fewshot":
+        # For few-shot, we can use a template with examples
+        custom_pallas_prompt = prompt_generate_custom_pallas_fewshot_and_template(
+            ref_arch_src, ["ex_add", "ex_mnist2", "ex_tiled_matmul"]
         )
     else:
         raise ValueError(
