@@ -143,7 +143,7 @@ def generate_sample_single(
         )
     else:
         raise ValueError(
-            f"Invalid prompt type: {config.prompt_type}. Supported types are 'default' and 'cot'."
+            f"Invalid prompt type: {config.prompt_type}. Supported types are 'default', 'cot', 'zeroshot', and 'fewshot'."
         )
 
     if config.log_prompt:

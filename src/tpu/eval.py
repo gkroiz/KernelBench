@@ -98,7 +98,7 @@ def graceful_eval_cleanup(curr_context: dict, device: torch.device):
 
 
 TORCH_TO_JAX = {
-    "kernel": "weight",
+    "weight": "kernel",
 }
 
 
@@ -115,43 +115,45 @@ def torch_to_jax_sd_copy(torch_model: nn.Module, jax_model: nnx.Module) -> nnx.M
         jk_concat = ".".join(jk)
 
         # Convert JAX terms to PyTorch terms based on TERM_DICT
-        for torch_term, jax_term in TORCH_TO_JAX.items():
-            if torch_term in jk_concat:
-                jk_concat = jk_concat.replace(torch_term, jax_term)
-                
         if jk_concat not in torch_flat_sd:
-            raise ValueError(f"Mismatch in keys: JAX key {jk} does not exist in PyTorch state_dict.")
+            for torch_term, jax_term in TORCH_TO_JAX.items():
+                for torch_flat_key in torch_flat_sd.keys():
+                    if torch_term in torch_flat_key and jax_term in jk:
+                        jk = list(jk)
+                        jk[jk.index(jax_term)] = torch_term
+                        jk = tuple(jk)
+                        break
+
+        jk_concat = ".".join(jk)
+
+        if jk_concat not in torch_flat_sd:
+            raise ValueError(f"Mismatch in keys: JAX key {jk_concat} does not exist in PyTorch state_dict.")
 
         # Check if the JAX tensor needs to be transposed
         torch_shape = torch_flat_sd[jk_concat].shape
         jax_shape = jv.value.shape
 
-        # If shapes don't match but have same elements, try to transpose
-        if torch_shape != jax_shape and torch_shape[::-1] == jax_shape:
-            # If weight tensor in linear layer, transpose for PyTorch -> JAX conversion
-            torch_tensor = torch_flat_sd[jk_concat].numpy().T
-            jv.value = jnp.array(torch_tensor)
-        elif torch_shape != jax_shape:
-            # More complex case: dimensions might be permuted differently
-            if torch_shape[0] * torch_shape[1] == jax_shape[0] * jax_shape[1]:
-                # Try different permutations if dimensions are compatible
-                try:
-                    # Try simple transpose first
-                    torch_tensor = torch_flat_sd[jk_concat].numpy().T
-                    if torch_tensor.shape == jax_shape:
-                        jv.value = jnp.array(torch_tensor)
-                    else:
-                        # If still doesn't match, try reshape then transpose
-                        torch_tensor = torch_flat_sd[jk_concat].numpy().reshape(jax_shape)
-                        jv.value = jnp.array(torch_tensor)
-                except Exception as e:
-                    raise ValueError(f"Cannot reconcile shapes: {torch_shape} vs {jax_shape}. Error: {str(e)}")
-            else:
-                raise ValueError(f"Incompatible shapes: {torch_shape} vs {jax_shape}")
+        # Check if shapes have same dimensions just in different order
+        if sorted(torch_shape) == sorted(jax_shape):
+            try:
+                # Find the permutation to match JAX shape
+                perm = []
+                for dim in jax_shape:
+                    idx = torch_shape.index(dim)
+                    while idx in perm:
+                        idx += 1
+                    perm.append(idx)
+                # Transpose the torch tensor to match JAX shape
+                torch_tensor_transposed = torch_flat_sd[jk_concat].permute(perm)
+                jv.value = jnp.array(torch_tensor_transposed.numpy())
+            except:
+                raise ValueError(
+                    f"Could not transpose PyTorch tensor for key {jk_concat} with shape {torch_shape} to match JAX shape {jax_shape}"
+                )
         else:
-            # Shapes match, direct copy
-            jv.value = jnp.array(torch_flat_sd[jk_concat].numpy())
-        
+            raise ValueError(
+                f"Shape mismatch: JAX shape {jax_shape} does not match PyTorch shape {torch_shape} for key {jk_concat}"
+            )
 
     jax_model = nnx.merge(jax_graphdef, jax_params, jax_batch_stats)
     
