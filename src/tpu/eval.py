@@ -13,8 +13,12 @@ from src.eval import (
     load_original_model_and_inputs,
     register_and_format_exception,
 )
+import time
 
 from torch.distributed._state_dict_utils import _flatten_state_dict
+
+import torchax
+torchax.enable_globally()
 
 
 def load_custom_model(
@@ -50,12 +54,11 @@ def set_seed(seed: int):
         torch.cuda.manual_seed(seed)
 
 
-def get_timing_stats(elapsed_times: list[float], device: torch.device = None) -> dict:
+def get_timing_stats(elapsed_times: list[float]) -> dict:
     """Get timing statistics from a list of elapsed times.
 
     Args:
         elapsed_times: List of elapsed times in milliseconds
-        device: CUDA device, record device info
     Returns:
         Dict containing mean, std, min, max and num_trials
         all timing are in ms
@@ -67,12 +70,8 @@ def get_timing_stats(elapsed_times: list[float], device: torch.device = None) ->
         "min": float(f"{np.min(elapsed_times):.3g}"),
         "max": float(f"{np.max(elapsed_times):.3g}"),
         "num_trials": len(elapsed_times),
+        "hardware": "TPU"
     }
-
-    if device:
-        if torch.cuda.is_available():
-            stats["hardware"] = torch.cuda.get_device_name(device=device)
-        stats["device"] = str(device)  # for debugging
 
     return stats
 
@@ -93,6 +92,12 @@ def graceful_eval_cleanup(curr_context: dict, device: torch.device):
             torch.cuda.synchronize(
                 device=device
             )  # Wait for all CUDA operations to complete
+    
+    # Clear JAX compilation cache and reset TPU state
+    if jax.default_backend() == "tpu":
+        jax.clear_caches()
+        # Reset TPU state
+        jax.distributed.shutdown()
 
     # _cleanup_cuda_extensions() # SIMON NOTE: is this necessary?
 
@@ -160,58 +165,44 @@ def torch_to_jax_sd_copy(torch_model: nn.Module, jax_model: nnx.Module) -> nnx.M
     return jax_model
 
 
-def time_execution_with_cuda_event(
+def time_execution(
     kernel_fn: callable,
     *args,
     num_warmup: int = 3,
     num_trials: int = 10,
     verbose: bool = True,
-    device: torch.device = None,
 ) -> list[float]:
     """
-    Time a CUDA kernel function over multiple trials using torch.cuda.Event
+    Time a Pallas kernel function over multiple trials
 
     Args:
         kernel_fn: Function to time
         *args: Arguments to pass to kernel_fn
         num_trials: Number of timing trials to run
         verbose: Whether to print per-trial timing info
-        device: CUDA device to use, if None, use current device
 
     Returns:
         List of elapsed times in milliseconds
     """
-    if device is None:
-        if verbose:
-            print(f"Using current device: {torch.cuda.current_device()}")
-        device = torch.cuda.current_device()
-
     # Warm ups
     for _ in range(num_warmup):
-        kernel_fn(*args)
-        if torch.cuda.is_available():
-            torch.cuda.synchronize(device=device)
+        kernel_fn(*args).block_until_ready()
 
     print(
-        f"[Profiling] Using device: {device} {torch.cuda.get_device_name(device)}, warm up {num_warmup}, trials {num_trials}"
+        f"[Profiling] Using TPU, warm up {num_warmup}, trials {num_trials}"
     )
     elapsed_times = []
 
     # Actual trials
     for trial in range(num_trials):
         # create event marker default is not interprocess
-        start_event = torch.cuda.Event(enable_timing=True)
-        end_event = torch.cuda.Event(enable_timing=True)
 
-        start_event.record()
-        kernel_fn(*args)
-        end_event.record()
-
-        # Synchronize to ensure the events have completed
-        torch.cuda.synchronize(device=device)
+        start = time.time()
+        kernel_fn(*args).block_until_ready()
+        end = time.time()
 
         # Calculate the elapsed time in milliseconds
-        elapsed_time_ms = start_event.elapsed_time(end_event)
+        elapsed_time_ms = (end - start) * 1000  # Convert to milliseconds
         if verbose:
             print(f"Trial {trial + 1}: {elapsed_time_ms:.3g} ms")
         elapsed_times.append(elapsed_time_ms)
@@ -342,7 +333,7 @@ def run_and_check_correctness(
 
                 # check output value difference
                 if not np.allclose(
-                    output_np, output_new_np, atol=1e-01, rtol=1e-01
+                    output_np, output_new_np, atol=1e-02, rtol=1e-02
                 ):  # fail
                     max_diff = np.max(np.abs(output_np - output_new_np)).item()
                     avg_diff = np.mean(np.abs(output_np - output_new_np)).item()
@@ -391,9 +382,7 @@ def eval_kernel_against_ref(
     verbose: bool = False,
     measure_performance: bool = False,
     build_dir: os.PathLike = None,
-    device: torch.device = (
-        torch.cuda.current_device() if torch.cuda.is_available() else "cpu"
-    ),  # have to run on GPU
+    device = None,
 ) -> KernelExecResult:
     """
     Evaluate the custom kernel against the original model
@@ -412,11 +401,15 @@ def eval_kernel_against_ref(
         edgeitems=3,  # Number of elements at beginning and end of dimensions
         linewidth=80,  # Maximum width before wrapping
     )
-
-    # set CUDA device
-    if isinstance(device, int):
+    
+    if torch.cuda.is_available():
+        device = torch.cuda.current_device()
         torch.cuda.set_device(device)
-
+    elif jax.default_backend() == "tpu":
+        device = "jax"
+    else:
+        device = "cpu"
+        
     context = {}
 
     if verbose:
@@ -531,30 +524,37 @@ def eval_kernel_against_ref(
 
     # Measure Performance [Optional] | conditioned on compilation + correctness + no exception so far
     if measure_performance:
-        assert torch.cuda.is_available(), "Performance measurement requires CUDA"
+        assert jax.default_backend() == "tpu", "Performance measurement only supported on TPU"
         try:
             if kernel_exec_result and kernel_exec_result.correctness:
                 if verbose:
                     print("[Eval] Measuring Performance as Sample is Correct")
 
-                torch.cuda.synchronize(device=device)
                 set_seed(seed_num)
                 inputs = get_inputs()
                 inputs = [
                     x.to(device=device) if isinstance(x, torch.Tensor) else x
                     for x in inputs
                 ]
-                model_new = custom_model
-                torch.cuda.synchronize(device=device)
 
-                elapsed_times = time_execution_with_cuda_event(
+                jax_inputs = [
+                    (
+                        jax.numpy.array(x.cpu().numpy())
+                        if isinstance(x, torch.Tensor)
+                        else x
+                    )
+                    for x in inputs
+                ]
+
+                model_new = custom_model
+
+                elapsed_times = time_execution(
                     model_new,
-                    *inputs,
+                    *jax_inputs,
                     num_trials=num_perf_trials,
                     verbose=verbose,
-                    device=device,
                 )
-                runtime_stats = get_timing_stats(elapsed_times, device=device)
+                runtime_stats = get_timing_stats(elapsed_times)
 
                 if verbose:
                     print(f"[Eval] Performance Stats: {runtime_stats}")
