@@ -186,7 +186,7 @@ def time_execution(
     """
     # Warm ups
     for _ in range(num_warmup):
-        kernel_fn(*args).block_until_ready()
+        jax.block_until_ready(kernel_fn(*args))
 
     print(
         f"[Profiling] Using TPU, warm up {num_warmup}, trials {num_trials}"
@@ -198,7 +198,7 @@ def time_execution(
         # create event marker default is not interprocess
 
         start = time.time()
-        kernel_fn(*args).block_until_ready()
+        jax.block_until_ready(kernel_fn(*args))
         end = time.time()
 
         # Calculate the elapsed time in milliseconds
