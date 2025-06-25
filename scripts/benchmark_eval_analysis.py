@@ -57,7 +57,7 @@ def analyze_greedy_eval(run_name, hardware, baseline, level):
     dataset = construct_kernelbench_dataset(level)
 
     # load json
-    eval_file_path = f'runs/{run_name}/eval_results.json'
+    eval_file_path = f'{run_name}/eval_results.json'
     assert os.path.exists(eval_file_path), f"Eval file does not exist at {eval_file_path}"
 
     baseline_file_path = f'results/timing/{hardware}/{baseline}.json'
