@@ -12,11 +12,13 @@ from src.tpu.prompt_constructor import (
     prompt_generate_custom_pallas_fewshot_and_template,
     prompt_generate_custom_pallas_zero_shot_from_prompt_template,
     prompt_generate_ex_with_CoT_template,
+    add_relevant_kernel_examples_to_prompt,
 )
 from src.utils import (
     create_inference_server_from_presets,
     extract_first_code,
     maybe_multithread,
+    maybe_multiprocess_cuda,
     read_file,
 )
 
@@ -77,6 +79,12 @@ class GenerationConfig(Config):
 
         # Prompt type:
         self.prompt_type = "default"  # default, cot, zeroshot, fewshot
+        
+        self.project_id = None  # Google Cloud Project ID, if using GCP services
+        self.bq_dataset_name = None  # BigQuery dataset name, if using GCP services
+        self.bq_table_name = None  # BigQuery table name, if using GCP services
+        
+        self.add_relevant_examples = False  # whether to add relevant examples to the prompt
 
     def greedy(self):
         # For greedy decoding, epsecially baseline eval
@@ -146,6 +154,9 @@ def generate_sample_single(
             f"Invalid prompt type: {config.prompt_type}. Supported types are 'default', 'cot', 'zeroshot', and 'fewshot'."
         )
 
+    if config.add_relevant_examples:
+        custom_pallas_prompt = add_relevant_kernel_examples_to_prompt(custom_pallas_prompt, ref_arch_src, config)
+
     if config.log_prompt:
         prompt_path = os.path.join(
             run_dir,
@@ -153,6 +164,7 @@ def generate_sample_single(
         )
         with open(prompt_path, "w") as f:
             f.write(custom_pallas_prompt)
+
 
     # Query server with constructed prompt
     cusotm_pallas = inference_server(custom_pallas_prompt)
@@ -180,10 +192,17 @@ def generate_sample_launcher(
     work: WorkArgs,
     config: GenerationConfig,
     dataset,
-    inference_server: callable,
     run_dir: str,
 ):
     try:
+        # Create inference server within the worker process to avoid pickling issues
+        inference_server = create_inference_server_from_presets(
+            server_type=config.server_type,
+            model_name=config.model_name,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+            verbose=config.verbose,
+        )
         return generate_sample_single(work, config, dataset, inference_server, run_dir)
     except Exception as e:
         print(f"Error generating sample {work.problem_id} {work.sample_id}: {e}")
@@ -250,28 +269,29 @@ def main(config: GenerationConfig):
                 WorkArgs(problem_id=int(problem_id), sample_id=0)  # fix to 0 for now
             )
 
-    # Create inference function with config parameters
-    # We provide some presets in utils but you can also pass in your own, see query_server for more details
-    inference_server = create_inference_server_from_presets(
-        server_type=config.server_type,
-        model_name=config.model_name,
-        temperature=config.temperature,
-        max_tokens=config.max_tokens,
-        verbose=config.verbose,
-    )
+    if config.add_relevant_examples:
+        generation_results = maybe_multiprocess_cuda(
+            generate_sample_launcher,
+            problems_to_run,
+            config.num_workers,
+            # extra args
+            config=config,
+            dataset=curr_level_dataset,
+            run_dir=run_dir,
+        )
 
-    # Launch workers
-    generation_results = maybe_multithread(
-        generate_sample_launcher,
-        problems_to_run,
-        config.num_workers,
-        time_interval=config.api_query_interval,
-        # extra args
-        config=config,
-        dataset=curr_level_dataset,
-        inference_server=inference_server,
-        run_dir=run_dir,
-    )
+    else:
+        # Launch workers
+        generation_results = maybe_multithread(
+            generate_sample_launcher,
+            problems_to_run,
+            config.num_workers,
+            time_interval=config.api_query_interval,
+            # extra args
+            config=config,
+            dataset=curr_level_dataset,
+            run_dir=run_dir,
+        )
 
     num_generated_samples = len(generation_results)
     total_problems = len(problems_to_run)

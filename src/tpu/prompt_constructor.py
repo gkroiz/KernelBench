@@ -388,6 +388,56 @@ def prompt_generate_custom_pallas_from_prompt_template(ref_arch_src: str) -> str
 def prompt_generate_custom_pallas_zero_shot_from_prompt_template(ref_arch_src) -> str:
     return prompt_generate_custom_pallas(ref_arch_src, "", "")
 
+
+def add_relevant_kernel_examples_to_prompt(prompt: str, ref_arch_src: str, cfg: "GenerationConfig", threshold: float = 0.1):
+    # Generate query by summarizing the architecture source code
+    
+    summarize_prompt = (
+        "Describe the code below in one sentence so that I can feed your response into an embedding model. "
+        "Your description should not mention the framework and should focus on the operations within the Model defintion. "
+        "Start with 'Operation:'.\n\n"
+        f"```\n{ref_arch_src}```\n"
+    )
+    
+    from google import genai
+
+    GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+    client = genai.Client(api_key=GEMINI_KEY)
+    response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-05-20",
+            contents=summarize_prompt,
+    )
+    
+    query = response.text
+    
+    query = ref_arch_src
+
+    # print("Generated query for kernel retrieval:", query)
+    
+    from tpu_kernel_gen.kernel_retrieval import initialize_vector_store, retrieve_similar_kernels, print_search_results
+    
+    store = initialize_vector_store(cfg.project_id, cfg.bq_dataset_name, cfg.bq_table_name)
+    
+    results = retrieve_similar_kernels(store, query, k=3)
+    
+    print_search_results(results, query, init_duration=0, search_duration=0)
+    
+    # Check if any results meet the threshold
+    relevant_results = [result for result in results if result["similarity_score"] >= threshold]
+    if not relevant_results:
+        return prompt
+    
+    prompt += "Here are some relevant examples of custom Jax Pallas kernels that can be used as references:\n\n"
+    example_id = 1
+    for result in results:
+        # print(f"{result['similarity_score']:.2f}")  # Debug print
+        if result["similarity_score"] < threshold:
+            continue
+        prompt += f"Example {example_id}:\n\n```\n{result['content']}\n```\n\n"
+        example_id += 1
+    
+    return prompt
+
 def main():
     gpu_name = "L40S"
 
