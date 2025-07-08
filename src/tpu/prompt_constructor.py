@@ -73,7 +73,7 @@ def prompt_generate_custom_pallas(
 
 PROBLEM_STATEMENT_CLEANED = "You write custom Jax Pallas kernels to replace the pytorch operators in the given architecture to get speedups.\n\nYou have complete freedom to choose the set of operators you want to replace. You may make the decision to replace some operators with custom Jax Pallas kernels and leave others unchanged. You may replace multiple operators with custom implementations, consider operator fusion opportunities (combining multiple operators into a single kernel, for example, combining matmul+relu), or algorithmic changes (such as online softmax). You are only limited by your imagination.\n\n"
 
-PROBLEM_INSTRUCTION_CLEANED = "\nOptimize the architecture named Model with custom Jax Pallas operators! Name your optimized output architecture `ModelNew`. Several additional rules for defining `ModelNew`:\n(1) `ModelNew` should be type `flax.nnx`.\n(2) The initialization function should only include `rngs` as an argument if it is used.\n(3) No need to call the parent class' initialization function.\n(4) All `nnx` layers and parameters defined upon `ModelNew` initialization must match the layer or parameter name used in the original PyTorch `Model` class (e.g., if the PyTorch model defines `self.conv3d`, the JAX model must also define `self.conv3d`).\n\nIn addition to `ModelNew`, output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Just output the new model code, no other text, and NO testing code! \n\n"
+PROBLEM_INSTRUCTION_CLEANED = "\nOptimize the architecture named Model with custom Jax Pallas operators! Name your optimized output architecture `ModelNew`. Several additional rules for defining `ModelNew`:\n(1) `ModelNew` should be type `flax.nnx`.\n(2) The initialization function should only include `rngs` as an argument if it is used.\n(3) No need to call the parent class' initialization function.\n(4) All `nnx` layers and parameters defined upon `ModelNew` initialization must match the layer or parameter name used in the original PyTorch `Model` class (e.g., if the PyTorch model defines `self.conv3d`, the JAX model must also define `self.conv3d`).\n(5) `layer.weight` in torch is equivalent to `layer.kernel` in flax.\n\nIn addition to `ModelNew`, output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Just output the new model code, no other text, and NO testing code! \n\n"
 
 
 
@@ -214,7 +214,7 @@ def prompt_generate_ex_with_CoT_template(ref_arch_src: str, cot_example: str) ->
 
     # I updated this to allow CoT. Also explicilty state think step by step.
     PROBLEM_INSTRUCTION_COT = (
-        "\nOptimize the architecture named Model with custom Jax Pallas operators! Name your optimized output architecture `ModelNew`. `ModelNew` should inherit from `flax.nnx`. Several additional rules for defining `ModelNew`:\n(1) `ModelNew` should be type `flax.nnx`.\n(2) The initialization function should only include `rngs` as an argument if it is used.\n(3) No need to call the parent class' initialization function.\n(4) All `nnx` layers and parameters defined upon `ModelNew` initialization must match the layer or parameter name used in the original PyTorch `Model` class (e.g., if the PyTorch model defines `self.conv3d`, the JAX model must also define `self.conv3d`).\n\nIn addition to `ModelNew`, output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Do not output testing code. \n"
+        "\nOptimize the architecture named Model with custom Jax Pallas operators! Name your optimized output architecture `ModelNew`. `ModelNew` should inherit from `flax.nnx`. Several additional rules for defining `ModelNew`:\n(1) `ModelNew` should be type `flax.nnx`.\n(2) The initialization function should only include `rngs` as an argument if it is used.\n(3) No need to call the parent class' initialization function.\n(4) All `nnx` layers and parameters defined upon `ModelNew` initialization must match the layer or parameter name used in the original PyTorch `Model` class (e.g., if the PyTorch model defines `self.conv3d`, the JAX model must also define `self.conv3d`).\n(5) `layer.weight` in torch is equivalent to `layer.kernel` in flax.\n(5) `layer.weight` in torch is equivalent to `layer.kernel` in flax.\n\nIn addition to `ModelNew`, output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Do not output testing code. \n"
         "In the end, make sure the final code block contains code for output architecture ModelNew with Jax Pallas code.\n\n"
         "Let's think step by step.\n\n"
     )
@@ -437,6 +437,69 @@ def add_relevant_kernel_examples_to_prompt(prompt: str, ref_arch_src: str, cfg: 
         example_id += 1
     
     return prompt
+
+
+def prompt_fix_compile(ref_arch_src, custom_pallas, metadata):
+    prompt = PROBLEM_STATEMENT
+    prompt += (
+        "With the following architecture:\n"
+        "```\n"
+        f"{ref_arch_src}\n"
+        "```\n\n"
+        "You generated the following solution and it failed to compile:\n"
+        "```\n"
+        f"{custom_pallas}\n"
+        "```\n\n"
+        f"Here's the metadata of the compilation error:\n"
+        "```\n"
+        f"{metadata}\n"
+        f"```\n\n"
+        "Please fix the compilation error in the new model code. Please output the full code with the changes to fix the error."
+    )
+
+    return prompt
+
+def prompt_fix_runtime_error(ref_arch_src, custom_pallas, metadata):
+    prompt = PROBLEM_STATEMENT
+    prompt += (
+        "With the following architecture:\n"
+        "```\n"
+        f"{ref_arch_src}\n"
+        "```\n\n"
+        "You generated the following solution and it failed at runtime:\n"
+        "```\n"
+        f"{custom_pallas}\n"
+        "```\n\n"
+        "Here's the metadata of the runtime error:\n"
+        "```\n"
+        f"{metadata}\n"
+        f"```\n\n"
+        "Please consider how your custom Pallas kernels are implemented, how it is different from the reference implementation, and fix the runtime error in the new model code. Please output the full code with the changes to fix the error."
+    )
+
+    return prompt
+
+
+def prompt_fix_correctness(ref_arch_src, custom_pallas, metadata):
+    prompt = PROBLEM_STATEMENT
+    prompt += (
+        "With the following architecture:\n"
+        "```\n"
+        f"{ref_arch_src}\n"
+        "```\n\n"
+        "You generated the following solution and it failed correctness:\n"
+        "```\n"
+        f"{custom_pallas}\n"
+        "```\n\n"
+        "Here's the metadata of the correctness error:\n"
+        "```\n"
+        f"{metadata}\n"
+        f"```\n\n"
+        "Please consider how your custom Pallas kernels are implemented, how it is different from the reference implementation, and fix the correctness error in the new model code. Please output the full code with the changes to fix the error."
+    )
+
+    return prompt
+
 
 def main():
     gpu_name = "L40S"

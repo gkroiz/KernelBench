@@ -7,12 +7,17 @@ from datasets import load_dataset
 from pydra import REQUIRED, Config
 
 from src.dataset import construct_kernelbench_dataset
+import json
+import shutil
 from src.tpu.prompt_constructor import (
     prompt_generate_custom_pallas_from_prompt_template,
     prompt_generate_custom_pallas_fewshot_and_template,
     prompt_generate_custom_pallas_zero_shot_from_prompt_template,
     prompt_generate_ex_with_CoT_template,
     add_relevant_kernel_examples_to_prompt,
+    prompt_fix_correctness,
+    prompt_fix_compile,
+    prompt_fix_runtime_error,
 )
 from src.utils import (
     create_inference_server_from_presets,
@@ -85,6 +90,9 @@ class GenerationConfig(Config):
         self.bq_table_name = None  # BigQuery table name, if using GCP services
         
         self.add_relevant_examples = False  # whether to add relevant examples to the prompt
+        
+        self.iterate = True  # whether to iterate over results from existing runs
+        self.iterate_dir = None  # directory to iterate over results from existing runs
 
     def greedy(self):
         # For greedy decoding, epsecially baseline eval
@@ -132,7 +140,65 @@ def generate_sample_single(
     ), f"Problem number in filename ({problem_number}) does not match config problem_id ({config.problem_id})"
 
     # Construct Prompt
-    if config.prompt_type == "default":
+    if config.iterate:
+        # Read existing kernel from iterate_dir
+        iterate_kernel_path = os.path.join(
+            config.iterate_dir, 
+            f"level_{config.level}_problem_{work.problem_id}_sample_0_kernel.py"
+        )
+        
+        # Read eval results
+        eval_results_path = os.path.join(config.iterate_dir, "eval_results.json")
+        
+        if os.path.exists(iterate_kernel_path) and os.path.exists(eval_results_path):
+            
+            # Read existing kernel code
+            with open(iterate_kernel_path, "r") as f:
+                existing_kernel = f.read()
+            
+            # Read eval results
+            with open(eval_results_path, "r") as f:
+                eval_results = json.load(f)
+            
+            if str(work.problem_id) not in eval_results:
+                print(f"No eval results found for problem {work.problem_id}.")
+                return False
+
+            existing_kernel_result = eval_results[str(work.problem_id)]
+            
+            if not existing_kernel_result["compiled"]:
+                custom_pallas_prompt = prompt_fix_compile(
+                    ref_arch_src,
+                    existing_kernel,
+                    existing_kernel_result["metadata"],
+                )
+            elif not existing_kernel_result["correctness"]:
+                if "max_difference" in existing_kernel_result["metadata"]:
+                    custom_pallas_prompt = prompt_fix_correctness(
+                        ref_arch_src,
+                        existing_kernel,
+                        existing_kernel_result["metadata"],
+                    )
+                else:
+                    custom_pallas_prompt = prompt_fix_runtime_error(
+                        ref_arch_src,
+                        existing_kernel,
+                        existing_kernel_result["metadata"],
+                    )
+            else:
+                # Both compile and correctness are true, copy existing kernel to new location
+                new_kernel_path = os.path.join(
+                    run_dir,
+                    f"level_{config.level}_problem_{work.problem_id}_sample_{work.sample_id}_kernel.py"
+                )
+                shutil.copy2(iterate_kernel_path, new_kernel_path)
+                return True
+            
+        else:
+            # Fall back to default prompt if files don't exist
+            return False
+
+    elif config.prompt_type == "default":
         custom_pallas_prompt = prompt_generate_custom_pallas_from_prompt_template(
             ref_arch_src
         )
